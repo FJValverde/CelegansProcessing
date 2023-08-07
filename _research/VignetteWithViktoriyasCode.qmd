@@ -1,0 +1,39 @@
+---
+title: "Viktoriya's scripting code"
+author: "Viktoriya Bokach and Francisco J. Valverde"
+format: pdf
+editor: visual
+---
+
+## Environment construction
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{julia}
+using CSV
+using ColorSchemes
+using Colors
+using DataFrames
+using DiffEqBase
+using DifferentialEquations
+using LinearAlgebra
+using ModelingToolkit
+using Plots
+using XLSX
+```
+
+## Data uploading and cleaning
+
+The following lines extract the data from different files and stores as a dataframe:
+
+```{julia}
+data_connect_phar = CSV.read("RawData/ConexionsPharyngeal.csv", DataFrame)
+"""
+Sending: Name of sending neuron
+Receiving: Name of receiving neuron
+Number: Number of synapses between the given neuron pair.
+Type: Type of synapse: S: synaptic; G: gap.
+"""
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
