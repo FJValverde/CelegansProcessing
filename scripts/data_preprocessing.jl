@@ -191,7 +191,7 @@ for row in eachrow(data_connect)
         end    
     end
     push!(data_index, (sending_value[i], receiving_value[i]))
-    i = i+1
+    global i = i+1
 end
 # Concatenate horizontally the dictionary of data_connect and indices
 data_connect = hcat(data_connect, data_index)
@@ -229,7 +229,7 @@ for row in eachrow(data_connect_monoamine)
         end    
     end
     push!(data_index_mono, (sending_value_mono[i], receiving_value_mono[i]))
-    i = i+1
+    global i = i+1
 end
 # Concatenate horizontally the dictionary of data_connect and indeces
 data_connect_monoamine = hcat(data_connect_monoamine, data_index_mono)
@@ -253,7 +253,7 @@ for row in eachrow(data_connect_neuropep)
         end    
     end
     push!(data_index_neuropep, (sending_value_neuropep[i], receiving_value_neuropep[i]))
-    i = i+1
+    global i = i+1
 end
 # Concatenate horizontally the dictionary of data_connect and indeces
 data_connect_neuropep = hcat(data_connect_neuropep, data_index_neuropep)
