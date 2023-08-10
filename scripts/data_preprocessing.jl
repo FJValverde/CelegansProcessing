@@ -7,7 +7,6 @@ using CSV
 using DataFrames
 using XLSX
 
-
 #%% Ignored packages for data loading and preprocessing
 # using ColorSchemes
 # using Colors
@@ -274,3 +273,8 @@ CSV.write(datadir("exp_pro", "data_connect_gap.csv"), data_connect_gap)
 CSV.write(datadir("exp_pro", "data_connect_monoamine.csv"), data_connect_monoamine)
 CSV.write(datadir("exp_pro", "data_connect_neuropeptide.csv"), data_connect_neuropep)
 println("Done!")
+
+
+println("4. Environment description")
+using Pkg;Pkg.status()
+

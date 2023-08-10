@@ -1,7 +1,8 @@
-name = "Celegans"
+name = "CelegansProcessing"
 authors = ["fva"]
 
 [deps]
+Celegans = "262e8257-1478-4b43-822c-b9d7b8a03366"
 DrWatson = "634d3b9d-ee7a-5ddf-bec9-22491ea816e1"
 XLSX = "fdbf4ff8-1666-58a4-91e7-1b58723a45e0"
 

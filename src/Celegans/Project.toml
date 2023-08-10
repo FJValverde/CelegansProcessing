@@ -1,0 +1,7 @@
+name = "Celegans"
+uuid = "262e8257-1478-4b43-822c-b9d7b8a03366"
+authors = ["Francisco J. Valverde <francisco.valverde@urjc.es>"]
+version = "0.1.0"
+
+[deps]
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
