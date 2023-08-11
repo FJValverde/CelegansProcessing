@@ -5,6 +5,8 @@ using DrWatson
 #%% Import packages
 using CSV
 using DataFrames
+using HDF5
+using Plots
 
 using Revise#This is to be able to modify module Celegans and reload it
 using Celegans
@@ -165,7 +167,8 @@ mono_connections_ser =
 vertical neuron indices appear."
 spy(mono_connections_tyr, color = :orange,
     plot_title= "Monoamine connections among neurons",
-    xlabel = "Sending neuron index", ylabel = "Receiving neuron index")
+    xlabel = "Sending neuron index",
+    ylabel = "Receiving neuron index")
 spy!(mono_connections_oct, color = :red)
 spy!(mono_connections_dop, color = :green)
 spy!(mono_connections_ser, color = :blue,legend=:outertopright)
@@ -203,7 +206,8 @@ spy!(neuropep_connections_Type2, color = :red)
 # FVA: We should distinguish the type of neuroamine in this map.
 # FVA: Q. Which of these plots should be saved for explanation?
 print("3. Saving the matrix data for later modelling...")
-
+# Despite claims to the contrary, HDF5 does not define @safe @load as Matlab does.
+#@write datadir(datadir("exp_pro","connectome_matrices")) data_connect_gap data_connect_synaptic data connect_monoamine data connect_neuropeptide
 println("Done!")
 
 println("4. Environment description")
