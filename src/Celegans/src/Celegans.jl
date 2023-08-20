@@ -11,7 +11,7 @@ include("celegans_constants.jl");
 
 include("celegans_functions.jl");
 
-# Set variables for Celegans
+include("celegans_files.jl");#Submodule Files
 
 export nNeurons,
     # celegans_constants.jl
@@ -29,6 +29,9 @@ export nNeurons,
 
     #celegans_functions.jl
     connectomeToMultivaluedMatrix,
-    connectomeToBinaryMatrix
+    connectomeToBinaryMatrix,
+
+    #Paths to different datasets both raw and after preprocessing
+    Files
 end
 

@@ -1,11 +1,13 @@
 #! /usr/local/bin/julia
 using DrWatson
-@quickactivate "Celegans"
+@quickactivate "CelegansProcessing"
 
 #%% Import packages
 using CSV
 using DataFrames
+using TidierData
 using XLSX
+using JLD2
 
 #%% Ignored packages for data loading and preprocessing
 # using ColorSchemes
@@ -15,24 +17,28 @@ using XLSX
 # using LinearAlgebra
 # using ModelingToolkit
 
-# FVA: so dar 07/08/23
+using Revise
+using Celegans
+
 
 #%% DATA IMPORT
-"The following lines extract the data from different files and stores as a dataframe"
+print("0. DATA IMPORT: ")
+print("extracting the data from different files and stores as dataframes...")
 
-data_connect_phar = CSV.read(datadir("exp_raw","ConexionsPharyngeal.csv"), DataFrame) 
-# data_connect_phar = CSV.read("RawData/ConexionsPharyngeal.csv", DataFrame)
 """
 Sending: Name of sending neuron
 Receiving: Name of receiving neuron
 Number: Number of synapses between the given neuron pair.
 Type: Type of synapse: S: synaptic; G: gap.
 """
+data_connect_phar =
+    CSV.read(datadir("exp_raw","ConexionsPharyngeal.csv"), DataFrame);
+# data_connect_phar = CSV.read("RawData/ConexionsPharyngeal.csv", Data Frame)
+describe(data_connect_phar)
 
-
-data_connect_neuron = DataFrame(XLSX.readtable(datadir("exp_raw","NeuronConnect.xlsx"), "Sheet1"))
-# data_connect_neuron = DataFrame(XLSX.readtable("RawData/NeuronConnect.xlsx", "Sheet1"))
 """
+These data come from WormAtlas in NeuronConnect.xls(x)
+
 N1: Neuron 1 name
 N2: Neuron 2 name
 Type: Type of synapse: 
@@ -50,10 +56,15 @@ It must be noted that at polyadic synaptic sites, not all “send-poly” were f
     now listed in this Table, both with respect to the sending neuron and with respect to the receiving neuron(s).
 Nbr: Number of synapses between the given neuron pair.
 """
+data_connect_neuron =
+    DataFrame(XLSX.readtable(datadir("exp_raw","NeuronConnect.xlsx"), "Sheet1"; 
+              infer_eltypes=true));
+# data_connect_neuron = DataFrame(XLSX.readtable("RawData/NeuronConnect.xlsx", "Sheet1"))
+describe(data_connect_neuron)
 
-# data_type_neuron = DataFrame(XLSX.readtable("RawData/NeuronType.xlsx", "Sheet1"))
-data_type_neuron = DataFrame(XLSX.readtable(datadir("exp_raw","NeuronType.xlsx"), "Sheet1"))
 """
+These data come from WormAtlas in NeuronType.xls(x)(sheet1)
+
 Neuron: Name of neuron
 Soma Position: Position of cell body along the AP axis of worm body. 0=tip of nose; 1=tail tip.
 Soma region: Cell body position by head, mid-body, or tail region.
@@ -83,19 +94,27 @@ AY NeuronType: Letter codes denoting ganglion group as defined by Achacoso and Y
 AYNbr: Numeric identifier given by AY for each neuron.
 Note:  Sum of S_Head and R_Head does not include electrical junctions (EJ), therefore, does not equal TotHead.  Similar is true for mid-body and tail.
 """
+data_type_neuron =
+    DataFrame(XLSX.readtable(datadir("exp_raw","NeuronType.xlsx"),"Sheet1";
+                             infer_eltypes = true));
+# data_type_neuron = DataFrame(XLSX.readtable("RawData/NeuronType.xlsx", "Sheet1"))
+describe(data_type_neuron)
 
-                             
-                                     
-data_type_phar = DataFrame(XLSX.readtable(datadir("exp_raw","NeuronType.xlsx"), "Sheet2"))
-# data_type_phar = DataFrame(XLSX.readtable("RawData/NeuronType.xlsx", "Sheet2"))
+
 """
+Q.FVA: where do these data come from?
+
 Neuron: Name of neuron
 Soma Position: Position of cell body along the AP axis of worm body. 0=tip of nose; 1=tail tip.
 Soma region: Cell body position by head, mid-body, or tail region.
 """
+data_type_phar = DataFrame(
+    XLSX.readtable(datadir("exp_raw","NeuronType.xlsx"), "Sheet2";
+                   infer_eltypes=true)
+);
+# data_type_phar = DataFrame(XLSX.readtable("RawData/NeuronType.xlsx", "Sheet2"))
+describe(data_type_phar)
 
-data_connect_monoamine = CSV.read(datadir("exp_raw","MonoaminesConnect.csv"), DataFrame)
-# data_connect_monoamine = CSV.read("RawData/MonoaminesConnect.csv", DataFrame)
 """
 Neuron1: Name of sending neuron
 Neuron2: Name of receiving neuron
@@ -103,175 +122,291 @@ Type: Name of the monoamine
 Monoamine: MA stands for monoamine
 Specific: The specific type of monoamine
 """
+data_connect_monoamine =
+    CSV.read(datadir("exp_raw","MonoaminesConnect.csv"), DataFrame;
+             types=String#try to read them all as a "String" type.
+             )
+# data_connect_monoamine = CSV.read("RawData/MonoaminesConnect.csv", DataFrame)
 
 
-data_connect_neuropep = CSV.read(datadir("exp_raw","NeuropeptidesConnect.csv"), DataFrame)
-# data_connect_neuropep = CSV.read("RawData/NeuropeptidesConnect.csv", DataFrame)
 """
 Neuron1: Name of sending neuron
 Neuron2: Name of receiving neuron
 Type1: One neuropeptide
 Type2: Another neuropeptide
 """
+data_connect_neuropep =
+    CSV.read(datadir("exp_raw","NeuropeptidesConnect.csv"), DataFrame;
+             types=String)
+# data_connect_neuropep = CSV.read("RawData/NeuropeptidesConnect.csv", DataFrame)
 
 
-neurotransmitter = DataFrame(XLSX.readtable(datadir("exp_raw","Neurotransmitters.xlsx"), "Sheet1"))
-# neurotransmitter = DataFrame(XLSX.readtable("RawData/Neurotransmitters.xlsx", "Sheet1"))
-"""These tables originate from a set of tables found in Pereira et al., 2015 
-(http://elifesciences.org/content/4/e12432v2), combined with information compiled in Loer & Rand,
-2016 & 2022, WormAtlas, and  from Gendrel et al., 2016 and Serrano-Saiz et al., 2017.						
+"""
+These tables originate from:
+- a set of tables found in Pereira et al., 2015  (http://elifesciences.org/content/4/e12432v2),
+- combined with information compiled in Loer & Rand, 2016 & 2022, WormAtlas, and
+- from Gendrel et al., 2016 and Serrano-Saiz et al., 2017.						
 
 Neuron: Name of the neuron
 Neurotransmitter1: Main neurotransmitter
-Neurotransmitter2: If the nueron sends another neurotransmitter it is stated here
+Neurotransmitter2: If the neuron uses another neurotransmitter it is stated here
 """
+neuron_neurotransmitter = DataFrame(
+    XLSX.readtable(datadir("exp_raw","Neurotransmitters.xlsx"), "Sheet1";
+                   infer_eltypes=true));
+# neurotransmitter = DataFrame(XLSX.readtable("RawData/Neurotransmitters.xlsx", "Sheet1"))
+describe(neuron_neurotransmitter)
 
+# """
+# SUMMARY IMPORTING DATA: IMPORTANT VARIABLES: the DataFrames read in...
+# 1. data_connect_phar
+# 2. data_connect_neuron
+# 3. data_type_neuron
+# 4. data_type_phar
+# 5. data_connect_monoamine
+# 6. data_connect_neuropep
+# 7. neurotransmitter
 
-""" IMPORTANT VARIABLES: the DataFrames read in
-1. data_connect_phar
-2. data_connect_neuron
-3. data_type_neuron
-4. data_type_phar
-5. data_connect_monoamine
-6. data_connect_neuropep
-7. neurotransmitter"""
-
+# ...DO NOT TRANSMIT TO OTHER SCRIPTS!
+# """
+println("Done!")
 
 
 #%% DATA FRAMES AND CLEANING
-println("DATAFRAMES CLEANING")
-# GAP AND SYNAPTIC
-# From all the dataframe of data_type_neuron only select the first three columns
-data_type_neuron = data_type_neuron[:, 1:3]
-# Concatenate the two dataframes about neuron type
-data_type = vcat(data_type_phar, data_type_neuron)
-# Add the two neurons that do not have any connections
-push!(data_type,["CANL", 0.61, "M"])
-push!(data_type,["CANR", 0.61, "M"])
-# Sort the dataframe by the position of the neuron in the soma
-data_type_sort_soma = sort!(data_type, [:"Soma Position"])
-# FVA: maybe it would be advisable to sort here also wrt distance from the tip?
-# Q: Is this what the SomaPosition means roughly                            
-# Add a column to know for the future the number of the neuron
-data_type_sort_soma.Place = 1:302
+println("1. DATAFRAME CLEANING")
 
-" IMPORTANT VARIABLES:
-data_type_sort_soma #FVA: As the variable gathering all GJ and Synapsis 
-"
+# FVA: TODO. Maybe this list as well as that of neurotransmitters
+# should be stored in the Celegans module, as a data structure. 
+print("1.0 Ordered list of neurons sorted by distance to tip, giving a standard rank on them. ")
+#data_neuron_pos = vcat(data_type_phar, data_type_neuron, cols=:intersect)
+unlinked_neuron_pos = # These were provided by VB after some research
+    DataFrame(Neuron=["CANL", "CANR"], SomaPosition = 0.61,SomaRegion = "M");
+data_neuron_pos_sorted =
+    @chain vcat(data_type_phar, data_type_neuron, cols=:intersect) begin
+        rename!([:Neuron,:SomaPosition,:SomaRegion]) 
+        @bind_rows(unlinked_neuron_pos) 
+        @arrange(SomaPosition)
+        @mutate(Index=1:302)#FVA: this fixates the index
+    end;
 
+# # VB: From all the dataframe of data_type_neuron only select the first three columns
+# # VB: data_type_neuron = data_type_neuron[:, 1:3]
+# # 1. Concatenate the two dataframes keeping: :Neuron(name), "Soma Position", "Soma Region"
+# # VB: data_neuron_pos = vcat(data_neuron_pos_phar, data_neuron_pos_neuron)
+# data_neuron_pos = vcat(data_type_phar, data_type_neuron, cols=:intersect)
+# # 2. Add the two neurons that do not have any connections
+# push!(data_neuron_pos,["CANL", 0.61, "M"])
+# push!(data_neuron_pos,["CANR", 0.61, "M"])
+# # Q.FVA: what is the justification for the soma position of these two added neurons?
+
+# # 4. Sort the dataframe by the position of the neuron in the soma
+# data_neuron_pos_sorted = sort!(data_neuron_pos, [:"Soma Position"])
+
+# # 5. Add a column to know for the future the number of the neuron
+# data_neuron_pos_sorted.Index = 1:302
+# # FVA: this index based on topological position should be saved, somehow. But also, its inverse!
+println("""
+ IMPORTANT VARIABLES:
+data_neuron_pos_sorted #FVA: As the variable gathering all GJ and Synapsis 
+""")
+
+# 1.1 GAP AND SYNAPTIC
+#
+print("1.1 Main GJ and synaptic connectome...")
+# FVA: This is massaging the connectome of the pharingeal neurons
 # Interchange the "Number" and "Type" columns
-select!(data_connect_phar, [:Sending,:Receiving,:Type, :Number])
+#names(data_connect_phar)
+#names(data_connect_neuron)
+select!(data_connect_phar, [:Sending,:Receiving,:Type,:Number])
+#FVA: TODO, write the previous select as a TidierData step, like below...
+new_data_connect_phar =
+    @chain data_connect_phar begin
+        #select!(data_connect_phar, [:Sending,:Receiving,:Type,:Number])
+        @rename(OldType = Type)
+        @mutate(Type = if_else(OldType == "G", "EJ", OldType))
+        @select(Sending, Receiving, Type, Number)
+    end;
 # Rename columns so they match the names of "data_connect_phar"
-rename!(data_connect_neuron,[:Sending,:Receiving,:Type, :Number])
+#rename!(data_connect_neuron,[:Sending,:Receiving,:Type, :Number])
 # Concatenate the two dataframes about neuron connectivity
-data_connect = vcat(data_connect_phar, data_connect_neuron)
-
+new_data_connect_neuron = 
+    @chain rename(data_connect_neuron,[:Sending,:Receiving,:OldType,:Number]) begin
+        @mutate(Type = if_else(OldType == "Sp", "S", OldType))#FVA: Send multiple is also a Send.
+        @select(Sending, Receiving, Type, Number)
+    end;
+data_connect =
+    @chain vcat(new_data_connect_phar,
+                new_data_connect_neuron, 
+                cols = [:Sending,:Receiving,:Type, :Number]) begin
+        @filter(!(Type in ("R","Rp") ))#FVA: keep S, EJ, NMJ
+    end;
 # Eliminate the rows in which the "Type" is either receive, receive-poly or NMJ.
-data_connect = data_connect[data_connect.Type .!= "R", :]
-data_connect = data_connect[data_connect.Type .!= "Rp", :]
-data_connect = data_connect[data_connect.Type .!= "NMJ", :]
+#data_connect = data_connect[data_connect.Type .!= "R", :]
+#data_connect = data_connect[data_connect.Type .!= "Rp", :]
+#data_connect = data_connect[data_connect.Type .!= "NMJ", :]#FVA. Why eliminate the neuro_motor_junctions=?
+@assert unique(data_connect[!,:Type]) == ["S", "EJ", "NMJ"]
+
+#FVA: so far morning 20/8/23
+#TODO: set the types of the Neuron1 and Neuron2 entries to String7 or String7
 
 #%% Data homogeneization
-println("TRANSFORM THE CONNECTIONS FROM NEURON NAMES TO NUMBERS FOR GAP AND SYNAPTIC CONNECTIONS.")
-# Create a new dictionary to append the indexes
-data_index = DataFrame(IndexSending=Any[], IndexReceiving=Any[])
-# Create two vectors to store the indeces before appending
-sending_value = Vector{Int64}()
-receiving_value = Vector{Int64}()
-i = 1
-# Iterate through each row and append to the new dataframe with the sending and receiving value
-for row in eachrow(data_connect)
-    for value in eachrow(data_type_sort_soma)
-        if row[:Sending] == value[:Neuron]
-            append!(sending_value, value[:Place])
-        end
-        if row[:Receiving] == value[:Neuron]
-            append!(receiving_value, value[:Place])
-        end    
-    end
-    push!(data_index, (sending_value[i], receiving_value[i]))
-    global i = i+1
+print("TRANSFORM THE CONNECTIONS FROM NEURON NAMES TO NUMBERS FOR GAP AND SYNAPTIC CONNECTIONS...")
+
+# Solution by FVA:
+# a) Create dictionary for neuron names to sorted numbers
+indexByName = Dict(
+    zip(data_neuron_pos_sorted.Neuron,data_neuron_pos_sorted.Index)
+);
+function fIndexByName(NeuronName::String)
+    return(get(indexByName,NeuronName,nothing))
 end
-# Concatenate horizontally the dictionary of data_connect and indices
-data_connect = hcat(data_connect, data_index)
+#use as indexByName["BAGL"], but check that the name is bound.
+#FVA: do it with a dictionary
+data_connect =
+    @chain data_connect begin
+        @mutate( IndexSending = fIndexByName(Sending),
+                 indexReceiving = fIndexByName(Receiving)
+            )
+    end;
+# FVA: this code is idiosyncratic to VB and does not use dplyr-like processing
+# # Create a new dictionary to append the indexes
+# data_index = DataFrame(IndexSending=Any[], IndexReceiving=Any[])
+# # Create two vectors to store the indeces before appending
+# sending_value = Vector{Int64}()
+# receiving_value = Vector{Int64}()
+# i = 1
+# # Iterate through each row and append to the new dataframe with the sending and receiving value
+# for row in eachrow(data_connect)
+#     for value in eachrow(data_neuron_pos_sorted)
+#         if row[:Sending] == value[:Neuron]
+#             append!(sending_value, value[:Index])
+#         end
+#         if row[:Receiving] == value[:Neuron]
+#             append!(receiving_value, value[:Index])
+#         end    
+#     end
+#     push!(data_index, (sending_value[i], receiving_value[i]))
+#     global i = i + 1
+# end
+# # Concatenate horizontally the dictionary of data_connect and indices
+# data_connect = hcat(data_connect, data_index)
 
 # Select the gap juntions and join them
-data_connect_G = data_connect[data_connect.Type .== "G", :]
-data_connect_EJ = data_connect[data_connect.Type .== "EJ", :]
-data_connect_gap = vcat(data_connect_G, data_connect_EJ)
+data_connect_gap = @filter(data_connect, Type == "EJ");
+# data_connect_G = data_connect[data_connect.Type .== "G", :]
+# data_connect_EJ = data_connect[data_connect.Type .== "EJ", :]
+# data_connect_gap = vcat(data_connect_G, data_connect_EJ)
 
 # Select only the synaptic connections and join them
-data_connect_S = data_connect[data_connect.Type .== "S", :]
-data_connect_Sp = data_connect[data_connect.Type .== "Sp", :]
-data_connect_synaptic = vcat(data_connect_S, data_connect_Sp)
+data_connect_synaptic = @filter(data_connect, Type == "S");
+# data_connect_S = data_connect[data_connect.Type .== "S", :]
+# data_connect_Sp = data_connect[data_connect.Type .== "Sp", :]
+# data_connect_synaptic = vcat(data_connect_S, data_connect_Sp)
+println(describe(data_connect_gap))
+println(describe(data_connect_synaptic))
+println("Done!")
+
 
 #%% Dataframes and cleaning
-println("FURTHER DATAFRAMES CLEANING")
-# MONOAMINES AND NUEROPEPTIDES
-# From all the dataframe of data_type_neuron only select the first three columns
-data_connect_monoamine = data_connect_monoamine[:, 1:3]
+print("1.2 TRANSFORM THE CONNECTIONS FROM NEURON NAMES TO NUMBERS FOR MONOAMINES...")
+# MONOAMINES AND NEUROPEPTIDES
+# From all the dataframe of data_neuron_pos_neuron only select the first three columns
+#data_connect_monoamine = data_connect_monoamine[:, 1:3]
+data_connect_monoamine =
+    @chain data_connect_monoamine begin
+        @rename(Sending = Neuron1, Receiving = Neuron2)
+        @mutate(IndexSending = fIndexByName(Sending),
+                IndexReceiving = fIndexByName(Receiving))
+    end;
+println(describe(data_connect_monoamine))
+println("Done!")
 
 #%% TRANSFORM THE CONNECTIONS FROM NEURON NAMES TO NUMBERS FOR MONOAMINES
-# Create a new dictionary to append the indexes
-data_index_mono = DataFrame(IndexSending=Any[], IndexReceiving=Any[])
-# Create two vectors to store the indeces before appending
-sending_value_mono = Vector{Int64}()
-receiving_value_mono = Vector{Int64}()
-i = 1
-for row in eachrow(data_connect_monoamine)
-    for value in eachrow(data_type_sort_soma)
-        if row[:Neuron1] == value[:Neuron]
-            append!(sending_value_mono, value[:Place])
-        end
-        if row[:Neuron2] == value[:Neuron]
-            append!(receiving_value_mono, value[:Place])
-        end    
-    end
-    push!(data_index_mono, (sending_value_mono[i], receiving_value_mono[i]))
-    global i = i+1
-end
-# Concatenate horizontally the dictionary of data_connect and indeces
-data_connect_monoamine = hcat(data_connect_monoamine, data_index_mono)
+# # Create a new dictionary to append the indexes
+# data_index_mono = DataFrame(IndexSending=Any[], IndexReceiving=Any[])
+# # Create two vectors to store the indeces before appending
+# sending_value_mono = Vector{Int64}()
+# receiving_value_mono = Vector{Int64}()
+# i = 1
+# for row in eachrow(data_connect_monoamine)
+#     for value in eachrow(data_neuron_pos_sorted)
+#         if row[:Neuron1] == value[:Neuron]
+#             append!(sending_value_mono, value[:Index])
+#         end
+#         if row[:Neuron2] == value[:Neuron]
+#             append!(receiving_value_mono, value[:Index])
+#         end    
+#     end
+#     push!(data_index_mono, (sending_value_mono[i], receiving_value_mono[i]))
+#     global i = i+1
+# end
+# # Concatenate horizontally the dictionary of data_connect and indeces
+# data_connect_monoamine = hcat(data_connect_monoamine, data_index_mono)
 
 
+print("1.3 TRANSFORM THE CONNECTIONS FROM NEURON NAMES TO NUMBERS FOR neuropeptides...")
+data_connect_neuropep =
+    @chain data_connect_neuropep begin
+        @rename(Sending = Neuron1, Receiving = Neuron2)
+        @mutate(IndexSending = fIndexByName(Sending),
+                IndexReceiving = fIndexByName(Receiving))
+    end;
+describe(data_connect_neuropep)
+println("Done!")
 
-"TRANSFORM THE CONNECTIONS FROM NEURON NAMES TO NUMBERS FOR MONOAMINES"
-# Create a new dictionary to append the indexes
-data_index_neuropep = DataFrame(IndexSending=Any[], IndexReceiving=Any[])
-# Create two vectors to store the indeces before appending
-sending_value_neuropep = Vector{Int64}()
-receiving_value_neuropep = Vector{Int64}()
-i = 1
-for row in eachrow(data_connect_neuropep)
-    for value in eachrow(data_type_sort_soma)
-        if row[:Neuron1] == value[:Neuron]
-            append!(sending_value_neuropep, value[:Place])
-        end
-        if row[:Neuron2] == value[:Neuron]
-            append!(receiving_value_neuropep, value[:Place])
-        end    
-    end
-    push!(data_index_neuropep, (sending_value_neuropep[i], receiving_value_neuropep[i]))
-    global i = i+1
-end
-# Concatenate horizontally the dictionary of data_connect and indeces
-data_connect_neuropep = hcat(data_connect_neuropep, data_index_neuropep)
+# # Create a new dictionary to append the indexes
+# data_index_neuropep = DataFrame(IndexSending=Any[], IndexReceiving=Any[])
+# # Create two vectors to store the indeces before appending
+# sending_value_neuropep = Vector{Int64}()
+# receiving_value_neuropep = Vector{Int64}()
+# i = 1
+# for row in eachrow(data_connect_neuropep)
+#     for value in eachrow(data_neuron_pos_sorted)
+#         if row[:Neuron1] == value[:Neuron]
+#             append!(sending_value_neuropep, value[:Index])
+#         end
+#         if row[:Neuron2] == value[:Neuron]
+#             append!(receiving_value_neuropep, value[:Index])
+#         end    
+#     end
+#     push!(data_index_neuropep, (sending_value_neuropep[i], receiving_value_neuropep[i]))
+#     global i = i+1
+# end
+# # Concatenate horizontally the dictionary of data_connect and indeces
+# data_connect_neuropep = hcat(data_connect_neuropep, data_index_neuropep)
 
+print("1.5. Table of neurotransmitters and deduced inhibitory/excitatory activity")
+neuron_neurotransmitter =
+    @chain neuron_neurotransmitter begin
+        #@select(-inhibitory)
+        @mutate(Inhibitory=true)
+    end;
+describe(neuron_neurotransmitter)
 
 " IMPORTANT VARIABLES:
 data_connect_synaptic
 data_connect_gap
 data_connect_monoamine
 data_connect_neuropep
+neuron_neurotransmitter
 "
 
 
 # Conceptually all the data should be saved to the processed directory. 
 print("Saving all the preprocessed data...")
+CSV.write(datadir("exp_pro", "data_neuron_pos_sorted.csv"), data_neuron_pos_sorted)
 CSV.write(datadir("exp_pro", "data_connect_synaptic.csv"), data_connect_synaptic)
 CSV.write(datadir("exp_pro", "data_connect_gap.csv"), data_connect_gap)
 CSV.write(datadir("exp_pro", "data_connect_monoamine.csv"), data_connect_monoamine)
 CSV.write(datadir("exp_pro", "data_connect_neuropeptide.csv"), data_connect_neuropep)
+CSV.write(datadir("exp_pro", "neuron_neurotransmitter.csv"), neuron_neurotransmitter)
+
+#FVA. Debugging here 20/08/23
+# TODO: see how to properly export nested modules in Julia
+using JLD2
+jldsave(datadir("exp_pro",Celegans.Files.Directories);
+        indexByName)
+#TODO: store the dictionary of neurotransmitters.
 println("Done!")
 
 

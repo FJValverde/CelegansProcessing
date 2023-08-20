@@ -1,14 +1,26 @@
 #! /usr/local/bin/julia
-using DrWatson
+#
+# Author: FVA, based on V. Bokach's long monolithic script.
+# 
+# This script has two intended usages:
+# - as an interactive script, to visualise the multiple layers of the
+# connectome of C.elegans, and generate the matrices related to those. 
+# - as a batch script to generate said matrices.
+#
+# TODO: transform this into a jupyter or Quarto document.
+
+using DrWatson# Scientific project management with Julia
 @quickactivate "CelegansProcessing"
 
 #%% Import packages
 using CSV
 using DataFrames
-using HDF5
 using Plots
+using JLD2
 
-using Revise#This is to be able to modify module Celegans and reload it
+using Revise
+#This is to be able to modify module Celegans and reload it.
+# CAVEAT: use it only during Celegans development.
 using Celegans
 
 #%% Ignored packages for data loading and preprocessing
@@ -20,7 +32,6 @@ using Celegans
 # using LinearAlgebra
 # using ModelingToolkit
 
-# FVA: so far 09/08/23
 
 print("1. Loading all information dataframes...")
 data_connect_synaptic = CSV.read(datadir("exp_pro","data_connect_synaptic.csv"), DataFrame);
@@ -35,8 +46,12 @@ using Plots
 
 using Celegans: nNeurons
 
+# Q1: Are there inhibitory and excitatory neurons after these data?
+names(data_connect_synaptic)
+data_connect_synaptic[!,:Type]
+
 #%% Data exploration 
-println("2.1. Plot the number of connections of the synaptic and gap coonectomes")
+println("2.1. Plot the number of connections of the synaptic and gap connectomes")
 
 
 # 2.1.1 Obtaining the synaptic connectome
@@ -206,9 +221,32 @@ spy!(neuropep_connections_Type2, color = :red)
 # FVA: We should distinguish the type of neuroamine in this map.
 # FVA: Q. Which of these plots should be saved for explanation?
 print("3. Saving the matrix data for later modelling...")
+#@write datadir(datadir("exp_pro","connectome_matrices.hdf5")) data_connect_gap data_connect_synaptic data connect_monoamine data connect_neuropeptide
 # Despite claims to the contrary, HDF5 does not define @safe @load as Matlab does.
-#@write datadir(datadir("exp_pro","connectome_matrices")) data_connect_gap data_connect_synaptic data connect_monoamine data connect_neuropeptide
+#using JLD2
+#cfile = datadir("exp_pro",Celegans.Files.MlConnectome);
+#Export this name to a submodule of Celegans.Paths.ToMLConnectome
+
+jldsave(datadir("exp_pro",Celegans.Files.MlConnectome);
+        gapJunctionBinary=gap_connections,
+        gapJunctionMultivalued=gap_number,
+
+        synapticBinary=synaptic_connections,
+        synapticMultivalued=synaptic_number,
+
+        monoTyramineBinary=mono_connections_tyr,
+        monoOctopamineBinary=mono_connections_oct,
+        monoDopamineBinary=mono_connections_dop,
+        monoSerotonineBinary=mono_connections_ser,
+
+        neuropeptideType1Binary=neuropep_connections_Type1,
+        neuropeptideType2Binary=neuropep_connections_Type2
+        )
 println("Done!")
+#load with: connectomes = load(cfile)
+# data_connect_gap = connectomes["data_connect_gap"]
+#or load(cfile; data_connect_gap)
+
 
 println("4. Environment description")
 using Pkg;Pkg.status()
