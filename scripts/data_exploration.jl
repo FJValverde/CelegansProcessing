@@ -46,6 +46,26 @@ using Plots
 
 using Celegans: nNeurons
 
+# 2.1 A forward dictionary from names of neurons to indices
+
+
+# FVA: the next is better for data exploration?
+#%% Data homogeneization
+print("TRANSFORM THE CONNECTIONS FROM NEURON NAMES TO NUMBERS FOR GAP AND SYNAPTIC CONNECTIONS...")
+
+# Solution by FVA:
+# a) Create dictionary for neuron names to sorted numbers
+indexByName = Dict(
+    zip(neuron_position_sorted.Neuron,neuron_position_sorted.Index)
+);
+function fIndexByName(NeuronName::String)
+    return(get(indexByName,NeuronName,nothing))
+end
+#use as indexByName["BAGL"], but check that the name is bound.
+
+
+
+
 # Q1: Are there inhibitory and excitatory neurons after these data?
 names(data_connect_synaptic)
 data_connect_synaptic[!,:Type]
@@ -247,6 +267,11 @@ println("Done!")
 # data_connect_gap = connectomes["data_connect_gap"]
 #or load(cfile; data_connect_gap)
 
+#FVA. Debugging here 20/08/23
+# TODO: see how to properly export nested modules in Julia
+jldsave(datadir("exp_pro",Celegans.Files.Dictionaries);
+        indexByName)
+#TODO: store the dictionary of neurotransmitters.
 
 println("4. Environment description")
 using Pkg;Pkg.status()
