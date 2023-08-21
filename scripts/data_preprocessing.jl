@@ -6,6 +6,7 @@ using DrWatson
 using CSV
 using DataFrames
 using TidierData
+using TidierStrings
 using XLSX
 using JLD2
 
@@ -26,6 +27,8 @@ print("0. DATA IMPORT: ")
 print("extracting the data from different files and stores as dataframes...")
 
 """
+Pharingeal neuron connectivity data
+
 Sending: Name of sending neuron
 Receiving: Name of receiving neuron
 Number: Number of synapses between the given neuron pair.
@@ -33,8 +36,10 @@ Type: Type of synapse: S: synaptic; G: gap.
 """
 data_connect_phar =
     CSV.read(datadir("exp_raw","ConexionsPharyngeal.csv"), DataFrame);
-# data_connect_phar = CSV.read("RawData/ConexionsPharyngeal.csv", Data Frame)
-describe(data_connect_phar)
+# data_connect_phar = CSV.read("RawData/ConexionsPharyngeal.csv", Data
+# Frame)
+println("Data for pharingeal neuron connectivity:")
+println(describe(data_connect_phar))
 
 """
 These data come from WormAtlas in NeuronConnect.xls(x)
@@ -60,9 +65,38 @@ data_connect_neuron =
     DataFrame(XLSX.readtable(datadir("exp_raw","NeuronConnect.xlsx"), "Sheet1"; 
               infer_eltypes=true));
 # data_connect_neuron = DataFrame(XLSX.readtable("RawData/NeuronConnect.xlsx", "Sheet1"))
-describe(data_connect_neuron)
+println(describe(data_connect_neuron))
+
 
 """
+Neuron1: Name of sending neuron
+Neuron2: Name of receiving neuron
+Type: Name of the monoamine
+Monoamine: MA stands for monoamine
+Specific: The specific type of monoamine
+"""
+data_connect_monoamine =
+    CSV.read(datadir("exp_raw","MonoaminesConnect.csv"), DataFrame;
+             types=String#try to read them all as a "String" type.
+             )
+# data_connect_monoamine = CSV.read("RawData/MonoaminesConnect.csv", DataFrame)
+
+
+"""
+Neuron1: Name of sending neuron
+Neuron2: Name of receiving neuron
+Type1: One neuropeptide
+Type2: Another neuropeptide
+"""
+data_connect_neuropep =
+    CSV.read(datadir("exp_raw","NeuropeptidesConnect.csv"), DataFrame;
+             types=String)
+# data_connect_neuropep = CSV.read("RawData/NeuropeptidesConnect.csv", DataFrame)
+
+
+"""
+        Data on individual neurons
+
 These data come from WormAtlas in NeuronType.xls(x)(sheet1)
 
 Neuron: Name of neuron
@@ -100,8 +134,9 @@ data_type_neuron =
 # data_type_neuron = DataFrame(XLSX.readtable("RawData/NeuronType.xlsx", "Sheet1"))
 describe(data_type_neuron)
 
-
 """
+        Data on pharingeal neurons
+
 Q.FVA: where do these data come from?
 
 Neuron: Name of neuron
@@ -115,33 +150,11 @@ data_type_phar = DataFrame(
 # data_type_phar = DataFrame(XLSX.readtable("RawData/NeuronType.xlsx", "Sheet2"))
 describe(data_type_phar)
 
-"""
-Neuron1: Name of sending neuron
-Neuron2: Name of receiving neuron
-Type: Name of the monoamine
-Monoamine: MA stands for monoamine
-Specific: The specific type of monoamine
-"""
-data_connect_monoamine =
-    CSV.read(datadir("exp_raw","MonoaminesConnect.csv"), DataFrame;
-             types=String#try to read them all as a "String" type.
-             )
-# data_connect_monoamine = CSV.read("RawData/MonoaminesConnect.csv", DataFrame)
-
 
 """
-Neuron1: Name of sending neuron
-Neuron2: Name of receiving neuron
-Type1: One neuropeptide
-Type2: Another neuropeptide
-"""
-data_connect_neuropep =
-    CSV.read(datadir("exp_raw","NeuropeptidesConnect.csv"), DataFrame;
-             types=String)
-# data_connect_neuropep = CSV.read("RawData/NeuropeptidesConnect.csv", DataFrame)
 
+        Data on neurotransmitter production in neurons
 
-"""
 These tables originate from:
 - a set of tables found in Pereira et al., 2015  (http://elifesciences.org/content/4/e12432v2),
 - combined with information compiled in Loer & Rand, 2016 & 2022, WormAtlas, and
@@ -151,11 +164,11 @@ Neuron: Name of the neuron
 Neurotransmitter1: Main neurotransmitter
 Neurotransmitter2: If the neuron uses another neurotransmitter it is stated here
 """
-neuron_neurotransmitter = DataFrame(
+data_neuron_by_neurotransmitter = DataFrame(
     XLSX.readtable(datadir("exp_raw","Neurotransmitters.xlsx"), "Sheet1";
                    infer_eltypes=true));
 # neurotransmitter = DataFrame(XLSX.readtable("RawData/Neurotransmitters.xlsx", "Sheet1"))
-describe(neuron_neurotransmitter)
+describe(data_neuron_by_neurotransmitter)
 
 # """
 # SUMMARY IMPORTING DATA: IMPORTANT VARIABLES: the DataFrames read in...
@@ -205,10 +218,10 @@ data_neuron_pos_sorted =
 # # 5. Add a column to know for the future the number of the neuron
 # data_neuron_pos_sorted.Index = 1:302
 # # FVA: this index based on topological position should be saved, somehow. But also, its inverse!
-println("""
- IMPORTANT VARIABLES:
-data_neuron_pos_sorted #FVA: As the variable gathering all GJ and Synapsis 
-""")
+# println("""
+#  IMPORTANT VARIABLES:
+# data_neuron_pos_sorted #FVA: As the variable gathering all GJ and Synapsis 
+# """)
 
 # 1.1 GAP AND SYNAPTIC
 #
@@ -306,7 +319,6 @@ println(describe(data_connect_gap))
 println(describe(data_connect_synaptic))
 println("Done!")
 
-
 #%% Dataframes and cleaning
 print("1.2 TRANSFORM THE CONNECTIONS FROM NEURON NAMES TO NUMBERS FOR MONOAMINES...")
 # MONOAMINES AND NEUROPEPTIDES
@@ -351,7 +363,7 @@ data_connect_neuropep =
         @mutate(IndexSending = fIndexByName(Sending),
                 IndexReceiving = fIndexByName(Receiving))
     end;
-describe(data_connect_neuropep)
+println(describe(data_connect_neuropep))
 println("Done!")
 
 # # Create a new dictionary to append the indexes
@@ -375,20 +387,40 @@ println("Done!")
 # # Concatenate horizontally the dictionary of data_connect and indeces
 # data_connect_neuropep = hcat(data_connect_neuropep, data_index_neuropep)
 
-print("1.5. Table of neurotransmitters and deduced inhibitory/excitatory activity")
-neuron_neurotransmitter =
-    @chain neuron_neurotransmitter begin
-        #@select(-inhibitory)
-        @mutate(Inhibitory=true)
-    end;
-describe(neuron_neurotransmitter)
+print("1.5. Table of neurotransmitters and deduced
+inhibitory/excitatory activity")
+#exploring the neurotransmitters to decide the inhibitory character of
+#neuron
+names(data_neuron_by_neurotransmitter)
+unique(data_neuron_by_neurotransmitter.Neurotransmitter1)
+unique(data_neuron_by_neurotransmitter.Neurotransmitter2)
+data_neuron_by_neurotransmitter =
+    @chain data_neuron_by_neurotransmitter begin
+       # @select(-(IndexNeuron))
+    #end    
+        #@mutate(IndexNeuron=fIndexByName(Neuron))
+        transform(:Neuron => ByRow(fIndexByName) => :IndexNeuron)
+        transform(
+            [:Neurotransmitter1, :Neurotransmitter2] =>
+                      ByRow((n1, n2) -> str_detect(string(n1, " ", n2), "GABA")) =>
+                      :Inhibitory,
+            [:Neurotransmitter1, :Neurotransmitter2] =>
+                      ByRow((n1, n2) ->
+                         str_detect(string(n1, " ", n2), "Glutamate|choline"))
+                  => :Excitatory
+                  )
+        #        Inhibitory=str_detect.(Neurotransmitter1, "GABA")
+    end
+println("NEURON DATA BY NEUROTRANSMITTER")
+println(describe(data_neuron_by_neurotransmitter))
+println("Done!")
 
 " IMPORTANT VARIABLES:
 data_connect_synaptic
 data_connect_gap
 data_connect_monoamine
 data_connect_neuropep
-neuron_neurotransmitter
+data_neuron_by_neurotransmitter
 "
 
 
@@ -399,12 +431,12 @@ CSV.write(datadir("exp_pro", "data_connect_synaptic.csv"), data_connect_synaptic
 CSV.write(datadir("exp_pro", "data_connect_gap.csv"), data_connect_gap)
 CSV.write(datadir("exp_pro", "data_connect_monoamine.csv"), data_connect_monoamine)
 CSV.write(datadir("exp_pro", "data_connect_neuropeptide.csv"), data_connect_neuropep)
-CSV.write(datadir("exp_pro", "neuron_neurotransmitter.csv"), neuron_neurotransmitter)
+CSV.write(datadir("exp_pro", "data_neuron_by_neurotransmitter.csv"), data_neuron_by_neurotransmitter)
 
 #FVA. Debugging here 20/08/23
 # TODO: see how to properly export nested modules in Julia
 using JLD2
-jldsave(datadir("exp_pro",Celegans.Files.Directories);
+jldsave(datadir("exp_pro",Celegans.Files.Dictionaries);
         indexByName)
 #TODO: store the dictionary of neurotransmitters.
 println("Done!")
