@@ -10,7 +10,10 @@ information of a connectome in a DataFrame `dfConnectome`.
 
 See also [`connectomeToBinaryMatrix`](@ref)
 """
-function connectomeToMultivaluedMatrix(dfConnectome::DataFrame)
+function connectomeToMultivaluedMatrix(Dfconnectome::DataFrame)
+    # (dfConnectome::DataFrame(:IndexSending::Int64,
+    #                         :IndexReceiving::Int64,
+    #                         :Number::Int64))
     mat_num = zeros(nNeurons, nNeurons)
     mat_bin = zeros(nNeurons, nNeurons)
     for link in eachrow(dfConnectome)

@@ -5,7 +5,7 @@ using DrWatson
 #%% Import packages
 using CSV
 using DataFrames
-using TidierData
+using TidierData#FVA: but remember DataFramesMeta!!!
 using TidierStrings
 using XLSX
 #using JLD2
@@ -18,10 +18,30 @@ using XLSX
 # using LinearAlgebra
 # using ModelingToolkit
 
-using Revise
+using Revise#Because Celegans is under development
 using Celegans
 
 
+# Author: FVA
+#
+# These data come from the WormAtlas, specifically from:
+# 2 Neuronal Connectivity II: by L.R. Varshney, B.L. Chen, E. Paniagua, D.H. Hall and D.B. Chklovskii
+
+
+# From Varshney et al, 2011.
+# Results.
+# A new wiring diagram
+# The C. elegans nervous system contains 302 neurons and is divided into
+# the pharyngeal nervous system containing 20 neurons and the somatic
+# nervous system containing 282 neurons. We updated the wiring diagram
+# (see Methods) of the larger somatic nervous system. Since neurons
+# CANL/R and VC06 do not make synapses with other neurons, we restrict
+# our attention to the remaining 279 somatic neurons.
+# The wiring diagram consists of
+# - 6393 chemical synapses,
+# - 890 gap junctions, and
+# - 1410 neuromuscular junctions.
+    
 #%% DATA IMPORT
 print("0. DATA IMPORT: ")
 println("extracting the data from different files and stores as dataframes...")
@@ -48,11 +68,22 @@ data_connect_phar =
 # data_connect_phar = CSV.read("RawData/ConexionsPharyngeal.csv", Data
 # Frame)
 describe(data_connect_phar)
-println("Done!")
 @assert Set(unique(data_connect_phar[!,:Type])) == Set(["S", "EJ"])
+@assert length(unique(data_connect_phar.Sending)) == 20
+@assert length(unique(data_connect_phar.Receiving)) == 20
+#FVA: There seems to be missing links between these and the rest of the connectome
+dcphar = 
+    @chain data_connect_phar begin
+        @group_by(Type)
+        @summarise(Count=sum(Number))
+    end
+println("Done!")
 
 print("* DATA for the connectome of other neurons...")
+
 """
+Non-pharingeal connectome data.    
+
 These data come from WormAtlas in NeuronConnect.xls(x)
 
 N1: Neuron 1 name
@@ -73,27 +104,71 @@ It must be noted that at polyadic synaptic sites, not all “send-poly” were f
 Nbr: Number of synapses between the given neuron pair.
 """
 data_connect_neuron =
-    @chain DataFrame(XLSX.readtable(
-        datadir("exp_raw","NeuronConnect.xlsx"),"Sheet1"; infer_eltypes=true)) begin
-        rename([:Sending,:Receiving,:OldType,:Number])#Standard names
-        @mutate(Type = if_else(OldType == "Sp", "S", OldType))#FVA: Send multiple is also a Send.
-        @select(-(OldType))#Delete original type
+    DataFrame(
+        XLSX.readtable(
+            datadir("exp_raw","NeuronConnect.xlsx"),
+            "Sheet1";
+            infer_eltypes=true)
+   );
+data_connect_neuron =
+    @chain data_connect_neuron begin
+        rename([:Sending,:Receiving,:Type,:Number])#Standard names
     end;
-# data_connect_neuron = DataFrame(XLSX.readtable("RawData/NeuronConnect.xlsx", "Sheet1"))
 describe(data_connect_neuron)
+@assert Set(unique(data_connect_neuron[!,:Type])) == Set(["S", "Sp", "EJ", "NMJ", "R","Rp"])
+#In this new reconciliation, the total number of send and send-poly is equal to the total number of receive and receive-poly (S+Sp=R+Rp).
+
+# data_connect_neuron =
+#     @chain data_connect_neuron begin
+#         rename([:Sending,:Receiving,:OldType,:Number])#Standard names
+#         @mutate(Type = if_else(OldType == "Sp", "S", OldType))
+#         #FVA: Send multiple is also a Send.
+#         #But this generates duplicate rows, so group and add.
+#         @select(-(OldType))#Delete original type
+#     end
+#         @group_by(Sending,Receiving)
+#         @summarise(Number = sum(Number))    
+# end;
+
+                           
+# data_connect_neuron = DataFrame(XLSX.readtable("RawData/NeuronConnect.xlsx", "Sheet1"))
 println("Done!")
-@assert Set(unique(data_connect_neuron[!,:Type])) == Set(["S", "EJ", "NMJ", "R","Rp"])
-
-
+dc = 
+    @chain data_connect_neuron begin
+        @filter(Type in ("S", "Sp", "R","Rp"))
+        @group_by(Type)
+        @summarise(Count=sum(Number))#Count the number of synapses!
+    end
+@assert dc.Count[1] + dc.Count[4] == dc.Count[2] + dc.Count[3]
+# FVA: check that the correct number of sinapses and gap junctions are reported
+dcother =
+    @chain data_connect_neuron begin
+        @filter(!(Type in ("R","Rp") ))
+        @rename(OldType = Type)
+        @mutate(Type = if_else(OldType == "Sp", "S", OldType))#shared codes
+        #@select(Sending, Receiving, Type, Number)
+        @select(-(OldType))#dispose of dummy
+        @group_by(Type)
+        @summarise(Count=sum(Number))
+    end
+# FVA: The numbers do not add up completely.
+println("Estimadas 6393 sinapsis. Halladas en tabla:$(dcother.Count[2])")
+println("Estimadas 890 G.J. Halladas en tabla:$(dcother.Count[1]/2)")
+println("Estimadas 1410 NMJ. Halladas en tabla:$(dcother.Count[3])")
+#@assert dcother.Count[1] == 6393
+#@assert dcother.Count[2] == 890 * 2
 print("* DATA for the connectome of ALL neurons...")
 data_connect =
     @chain vcat(data_connect_phar, data_connect_neuron, 
                 cols = [:Sending,:Receiving,:Type, :Number]) begin
-        @filter(!(Type in ("R","Rp") ))#keep only S, EJ, NMJ
+        @filter(!(Type in ("R","Rp") ))#keep only S, Sp, EJ, NMJ
+        @rename(OldType = Type)
+        @mutate(Type = if_else(OldType == "Sp", "S", OldType))#shared code        @select(-(OldType))#dispose of dummy
     end;
 println(describe(data_connect))
-println("Done!")
+unique(data_connect.Type)
 @assert Set(unique(data_connect[!,:Type])) == Set(["S", "EJ", "NMJ"])
+println("Done!")
 
 print("1.2 READ CONNECTIONS FOR MONOAMINES...")
 """
@@ -106,7 +181,8 @@ Specific: The specific type of monoamine
 data_connect_monoamine =
     @chain CSV.read(datadir("exp_raw","MonoaminesConnect.csv"), DataFrame;
              types=String) begin
-        @rename(Sending = Neuron1, Receiving = Neuron2, Neurotransmitter = Type)
+        @rename(Sending = Neuron1,
+                Receiving = Neuron2, Neurotransmitter = Type)
         @select(-(Monoamine))
         @mutate(Type="MA")#For "MonoAmine"         
     end
@@ -175,35 +251,50 @@ neuron_type =
                              infer_eltypes = true));
 # neuron_type = DataFrame(XLSX.readtable("RawData/NeuronType.xlsx", "Sheet1"))
 describe(neuron_type)
+# Q.FVA: where is the data on sensory/interneuron/motor? And the groupings?
+
+
 
 """
         Data on pharingeal neurons
 
-Q.FVA: where do these data come from?
+These data may come from Durbin's thesis, after Varshney et al, 2011
 
 Neuron: Name of neuron
+
 Soma Position: Position of cell body along the AP axis of worm body. 0=tip of nose; 1=tail tip.
+
 Soma region: Cell body position by head, mid-body, or tail region.
 """
-data_type_phar = DataFrame(
+neuron_phar = DataFrame(
     XLSX.readtable(datadir("exp_raw","NeuronType.xlsx"), "Sheet2";
                    infer_eltypes=true)
 );
-# data_type_phar = DataFrame(XLSX.readtable("RawData/NeuronType.xlsx", "Sheet2"))
-describe(data_type_phar)
+# neuron_phar = DataFrame(XLSX.readtable("RawData/NeuronType.xlsx", "Sheet2"))
+describe(neuron_phar)
+@assert length(unique(neuron_phar.Neuron)) == 20
 
-# FVA: TODO. Maybe this list as well as that of neurotransmitters
-# should be stored in the Celegans module, as a data structure. 
-#print("1.0 Ordered list of neurons sorted by distance to tip, giving a standard rank on them. ")
-#data_neuron_pos = vcat(data_type_phar, neuron_type, cols=:intersect)
-unlinked_neuron_pos = # These were provided by VB after some research
+# From Varshney et al, 2011.
+#
+# "Two were excretory neurons (CANL/ R) that do not appear to make any synapses. The remaining neuron, RID, is the only process in the dorsal cord that extends over the length of the animal."
+neuron_unlinked = 
     DataFrame(Neuron=["CANL", "CANR"], SomaPosition = 0.61,SomaRegion = "M");
-neuron_position_sorted =
-    @chain vcat(data_type_phar, neuron_type, cols=:intersect) begin
-        rename!([:Neuron,:SomaPosition,:SomaRegion]) 
-        @bind_rows(unlinked_neuron_pos) 
+
+"""
+Aggregated, sorted data on neurons, but rejecting extra features on
+non-pharingeal neurons.
+"""
+neuron_all_pos =
+    #@chain vcat(neuron_phar, neuron_type, cols=:intersect) begin
+    @chain vcat(neuron_phar, neuron_type, cols=:union) begin
+        #rename!([:Neuron,:SomaPosition,:SomaRegion])
+        rename(["Soma Position" => "SomaPosition",
+                "Soma Region" => "SomaRegion"])
+        @bind_rows(neuron_unlinked) 
     end;
-println(describe(neuron_position_sorted))
+println(describe(neuron_all_pos))
+@assert length(unique(neuron_all_pos.Neuron)) == Celegans.nNeurons
+
 println("Done!")
 
 print("1.5. Table of neurotransmitters and deduced inhibitory/excitatory activity...")
@@ -222,29 +313,34 @@ Neurotransmitter2: If the neuron uses another neurotransmitter it is stated here
 """
 neuron_by_neurotransmitter =
     @chain DataFrame(
-        XLSX.readtable(datadir("exp_raw","Neurotransmitters.xlsx"), "Sheet1";
-                       infer_eltypes=true)) begin
+        XLSX.readtable(
+            datadir("exp_raw","Neurotransmitters.xlsx"),
+            "Sheet1";
+            infer_eltypes=true)) begin
     end
 # neurotransmitter = DataFrame(XLSX.readtable("RawData/Neurotransmitters.xlsx", "Sheet1"))
 describe(neuron_by_neurotransmitter)
 
 # We next return a single table on neurons with their positions and
 # neurotransmitters as the natural join of both.
-@assert Set(unique(neuron_position_sorted.Neuron)) == Set(unique(neuron_by_neurotransmitter.Neuron))
+@assert Set(unique(neuron_all_pos.Neuron)) == Set(unique(neuron_by_neurotransmitter.Neuron))
 
+"""
+neuron_list: List of neurons, their positions and their neurotransmitters.
+    """
 neuron_list =
-    @chain @inner_join(neuron_position_sorted,neuron_by_neurotransmitter,Neuron) begin
+    @chain @inner_join(neuron_all_pos,neuron_by_neurotransmitter,Neuron) begin
         @arrange(SomaPosition)
         @mutate(Index=1:302)#FVA: this fixates the index
     end
-
+println(describe(neuron_list))
                            
 # """
 # SUMMARY IMPORTING DATA: IMPORTANT VARIABLES: the DataFrames read in...
 # 1. data_connect_phar
 # 2. data_connect_neuron
 # 3. neuron_type
-# 4. data_type_phar
+# 4. neuron_phar
 # 5. data_connect_monoamine
 # 6. data_connect_neuropep
 # 7. neurotransmitter
@@ -262,21 +358,21 @@ println("1. DATAFRAME CLEANING...Done!")
 # # VB: neuron_type = neuron_type[:, 1:3]
 # # 1. Concatenate the two dataframes keeping: :Neuron(name), "Soma Position", "Soma Region"
 # # VB: neuron_pos = vcat(neuron_pos_phar, neuron_pos_neuron)
-# neuron_pos = vcat(data_type_phar, neuron_type, cols=:intersect)
+# neuron_pos = vcat(neuron_phar, neuron_type, cols=:intersect)
 # # 2. Add the two neurons that do not have any connections
 # push!(neuron_pos,["CANL", 0.61, "M"])
 # push!(neuron_pos,["CANR", 0.61, "M"])
 # # Q.FVA: what is the justification for the soma position of these two added neurons?
 
 # # 4. Sort the dataframe by the position of the neuron in the soma
-# neuron_position_sorted = sort!(neuron_pos, [:"Soma Position"])
+# neuron_all_pos = sort!(neuron_pos, [:"Soma Position"])
 
 # # 5. Add a column to know for the future the number of the neuron
-# neuron_position_sorted.Index = 1:302
+# neuron_all_pos.Index = 1:302
 # # FVA: this index based on topological position should be saved, somehow. But also, its inverse!
 # println("""
 #  IMPORTANT VARIABLES:
-# neuron_position_sorted #FVA: As the variable gathering all GJ and Synapsis 
+# neuron_all_pos #FVA: As the variable gathering all GJ and Synapsis 
 # """)
 
 # 1.1 GAP AND SYNAPTIC
@@ -332,7 +428,7 @@ println("1. DATAFRAME CLEANING...Done!")
 # i = 1
 # # Iterate through each row and append to the new dataframe with the sending and receiving value
 # for row in eachrow(data_connect)
-#     for value in eachrow(neuron_position_sorted)
+#     for value in eachrow(neuron_all_pos)
 #         if row[:Sending] == value[:Neuron]
 #             append!(sending_value, value[:Index])
 #         end
@@ -383,7 +479,7 @@ println("1. DATAFRAME CLEANING...Done!")
 # receiving_value_mono = Vector{Int64}()
 # i = 1
 # for row in eachrow(data_connect_monoamine)
-#     for value in eachrow(neuron_position_sorted)
+#     for value in eachrow(neuron_all_pos)
 #         if row[:Neuron1] == value[:Neuron]
 #             append!(sending_value_mono, value[:Index])
 #         end
@@ -415,7 +511,7 @@ println("1. DATAFRAME CLEANING...Done!")
 # receiving_value_neuropep = Vector{Int64}()
 # i = 1
 # for row in eachrow(data_connect_neuropep)
-#     for value in eachrow(neuron_position_sorted)
+#     for value in eachrow(neuron_all_pos)
 #         if row[:Neuron1] == value[:Neuron]
 #             append!(sending_value_neuropep, value[:Index])
 #         end
@@ -471,7 +567,7 @@ CSV.write(datadir("exp_pro", "data_connect.csv"), data_connect)
 #CSV.write(datadir("exp_pro", "data_connect_gap.csv"), data_connect_gap)
 CSV.write(datadir("exp_pro", "data_connect_monoamine.csv"), data_connect_monoamine)
 CSV.write(datadir("exp_pro", "data_connect_neuropeptide.csv"), data_connect_neuropep)
-#CSV.write(datadir("exp_pro", "neuron_position_sorted.csv"), neuron_position_sorted)
+#CSV.write(datadir("exp_pro", "neuron_all_pos.csv"), neuron_all_pos)
 #CSV.write(datadir("exp_pro", "neuron_by_neurotransmitter.csv"), neuron_by_neurotransmitter)
 CSV.write(datadir("exp_pro", "neuron_list.csv"), neuron_list)
 println("Done!")
