@@ -3,9 +3,10 @@
 This code base is using the [Julia Language](https://julialang.org/) and
 [DrWatson](https://juliadynamics.github.io/DrWatson.jl/stable/)
 to make a reproducible scientific project named
+
 > Celegans
 
-It is authored by fva, based on work done by Viktoriya Bokah and 
+It is authored by fva, based on work done by Viktoriya Bokah and Alba Casado for the Undergraduate Theses.
 
 To (locally) reproduce this project, do the following:
 
