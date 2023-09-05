@@ -470,6 +470,8 @@ print("3. Saving the matrix data for later modelling...")
 #Export this name to a submodule of Celegans.Paths.ToMLConnectome
 
 jldsave(datadir("exp_pro",Celegans.Files.mlConnectome);
+        nameByIndex = nameByIndex,#load with global nameByIndex...
+        indexByName = indexByName,#load with global nameByIndex...
         neuronList = neuron_list,#Extended neuron list with type of neuron
         dataGapJunctions=data_connect_gap,#DataFrame
         gapJunctionConnectome=gap_connectome,#Sparse matrix

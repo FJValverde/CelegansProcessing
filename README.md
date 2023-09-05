@@ -5,7 +5,7 @@ This code base is using the [Julia Language](https://julialang.org/) and
 to make a reproducible scientific project named
 > Celegans
 
-It is authored by fva.
+It is authored by fva, based on work done by Viktoriya Bokah and 
 
 To (locally) reproduce this project, do the following:
 

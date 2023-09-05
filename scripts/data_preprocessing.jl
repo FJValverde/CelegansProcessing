@@ -5,6 +5,7 @@ using DrWatson
 #%% Import packages
 using CSV
 using DataFrames
+import DataFrames: rename
 using TidierData#FVA: but remember DataFramesMeta!!!
 using TidierStrings
 using XLSX
@@ -60,7 +61,7 @@ data_connect_phar =
                     DataFrame;
                     stringtype=String) begin
         #select([:Sending,:Receiving,:Type,:Number])#reordercols
-        @rename(OldType = Type)
+        rename(:Type => :OldType)
         @mutate(Type = if_else(OldType == "G", "EJ", OldType))#shared codes
         #@select(Sending, Receiving, Type, Number)
         @select(-(OldType))#dispose of dummy
@@ -144,7 +145,7 @@ dc =
 dcother =
     @chain data_connect_neuron begin
         @filter(!(Type in ("R","Rp") ))
-        @rename(OldType = Type)
+        rename(:Type => :OldType)
         @mutate(Type = if_else(OldType == "Sp", "S", OldType))#shared codes
         #@select(Sending, Receiving, Type, Number)
         @select(-(OldType))#dispose of dummy
@@ -162,7 +163,8 @@ data_connect =
     @chain vcat(data_connect_phar, data_connect_neuron, 
                 cols = [:Sending,:Receiving,:Type, :Number]) begin
         @filter(!(Type in ("R","Rp") ))#keep only S, Sp, EJ, NMJ
-        @rename(OldType = Type)
+        rename(:Type => :OldType)
+        #@rename(OldType = Type)
         @mutate(Type = if_else(OldType == "Sp", "S", OldType))#shared code        @select(-(OldType))#dispose of dummy
     end;
 println(describe(data_connect))
@@ -180,12 +182,15 @@ Specific: The specific type of monoamine
 """
 data_connect_monoamine =
     @chain CSV.read(datadir("exp_raw","MonoaminesConnect.csv"), DataFrame;
-             types=String) begin
-        @rename(Sending = Neuron1,
-                Receiving = Neuron2, Neurotransmitter = Type)
+                    types=String) begin
+        rename(:Neuron1 => :Sending,
+               :Neuron2 => :Receiving,
+               :Type => :Neurotransmitter)
+        # @rename(Sending = Neuron1,
+        #         Receiving = Neuron2, Neurotransmitter = Type)
         @select(-(Monoamine))
         @mutate(Type="MA")#For "MonoAmine"         
-    end
+    end;
 # data_connect_monoamine = CSV.read("RawData/MonoaminesConnect.csv", DataFrame)
 println(describe(data_connect_monoamine))
 println("Done!")
@@ -201,7 +206,8 @@ Type2: Another neuropeptide
 """
 data_connect_neuropep =
     @chain CSV.read(datadir("exp_raw","NeuropeptidesConnect.csv"), DataFrame;types=String) begin
-        @rename(Sending = Neuron1, Receiving = Neuron2)
+        rename(:Neuron1 => :Sending, :Neuron2 => :Receiving)
+        #@rename(Sending = Neuron1, Receiving = Neuron2)
         @mutate(Type = "NP", Neurotransmitter = string(Type1, "|", Type2))
         @select(-(Type1))#, Type2))
         @select(-(Type2))#FVA: funny that this cannot be made for multiple columns
@@ -250,7 +256,7 @@ neuron_type =
     DataFrame(XLSX.readtable(datadir("exp_raw","NeuronType.xlsx"),"Sheet1";
                              infer_eltypes = true));
 # neuron_type = DataFrame(XLSX.readtable("RawData/NeuronType.xlsx", "Sheet1"))
-describe(neuron_type)
+println(describe(neuron_type))
 # Q.FVA: where is the data on sensory/interneuron/motor? And the groupings?
 
 
@@ -317,7 +323,7 @@ neuron_by_neurotransmitter =
             datadir("exp_raw","Neurotransmitters.xlsx"),
             "Sheet1";
             infer_eltypes=true)) begin
-    end
+    end;
 # neurotransmitter = DataFrame(XLSX.readtable("RawData/Neurotransmitters.xlsx", "Sheet1"))
 describe(neuron_by_neurotransmitter)
 
@@ -332,7 +338,7 @@ neuron_list =
     @chain @inner_join(neuron_all_pos,neuron_by_neurotransmitter,Neuron) begin
         @arrange(SomaPosition)
         @mutate(Index=1:302)#FVA: this fixates the index
-    end
+    end;
 println(describe(neuron_list))
                            
 # """
