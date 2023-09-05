@@ -389,7 +389,7 @@ end
 p = Gadfly.plot(dfs, x=:Time, y=:Voltage, color=:Neuron, Geom.line)
 img = SVG("100mV_PLM_input.svg")
 import Cairo, Fontconfig
-img = PDF("100mV_PLM_input.svg")
+img = PDF("100mV_PLM_input.pdf", 10cm,dpi=300)
 draw(img, p)
 display(p)
 
