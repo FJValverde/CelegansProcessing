@@ -20,12 +20,11 @@ To (locally) reproduce this project, do the following:
    julia> Pkg.instantiate()
    ```
 
-This will install all necessary packages for you to be able to run the scripts and
-everything should work out of the box, including correctly finding local paths.
+This will install all necessary packages for you to be able to run the scripts and everything should work out of the box, including correctly finding local paths.
 
-You may notice that most scripts start with the commands:
+You may notice that most scripts start with the code:
 ```julia
 using DrWatson
 @quickactivate "Celegans"
 ```
-which auto-activate the project and enable local path handling from DrWatson.
+which auto-activates the project and enables local path handling from DrWatson.
