@@ -7,7 +7,7 @@
 #
 # TODO: transform this into a jupyter or Quarto document.
 
-###  Building the environment
+##  Building the environment
 using DrWatson
 @quickactivate "CelegansProcessing"
 
@@ -36,7 +36,7 @@ using Celegans
 
 ###
 
-### LOADING DATA
+## LOADING DATA
 print("1. Loading the multilayered connectome...")
 connectomes = load(datadir("exp_pro",Celegans.Files.mlConnectome))
 #mlConnectome = load(datadir("exp_pro",Celegans.Files.MlConnectome))
@@ -171,10 +171,11 @@ using OrdinaryDiffEq
 # - u is the neuron voltage
 # - i is the neuron activation state/level
 # all constants imported from Celegans.Constants
-Gᵞ = gᵞ * gapJunctionConnectome#The matrix of GJ conductances
-Sᵞ = gᵞ * (excConnectome + inhConnectome)#Matrix of Synaptic conductances
-EJ = repeat(Ej',nNeurons,1)#Same ROW is the same
+Gᵞ = gᵞ * gapJunctionConnectome# The matrix of GJ conductances
+Sᵞ = gᵞ * (excConnectome + inhConnectome)# Matrix of Synaptic conductances
+EJ = repeat(Ej',nNeurons,1)# Same ROW is the same
 @assert all(vec(EJ[rand(1:nNeurons),:] .== EJ[rand(1:nNeurons),:]))
+
 #typeof(EJ[rand(1:nNeurons),:] .== EJ[rand(1:nNeurons),:])
 function derivatives(nStates, p, t)
     #dv = (-Gc * (nStates[:, 1] - Ecell) - eq_IiGap[1] - eq_IiSyn[1] +  ) / C
@@ -202,10 +203,11 @@ t = 0.010
 """
 function celegansChangeState!(dS, S, Iₑ, t)
     allV = repeat(S[:,1],1,nNeurons);#Makes the space for it. 
-    dS[:,1] .= (-Gc * (S[:, 1] .- Ecell) 
-                -  (sum( Gᵞ .* (allV - allV'), dims=2))
-                -  (Sᵞ .* (allV - EJ)) * S[:, 2]
-                + Iₑ(t)
+    dS[:,1] .= (-Gc * (S[:, 1] .- Ecell)# Basal membrane current 
+                -  (sum( Gᵞ .* (allV - allV'), dims=2))#gap junction connectome
+                -  (Sᵞ .* (allV - EJ)) * S[:, 2]# Synaptic connectome
+                # Neuropeptidergic connectome
+                + Iₑ(t)# Excitation current
                 ) ./ C
     dS[:,2] .= ar * (1 ./ (1 .+ exp.(-beta * (S[:, 1] .- Vth)))) .* (1 .- S[:, 2]) .- ad * S[:, 2]
   #return hcat(dv,di)
