@@ -1,0 +1,644 @@
+---
+Author: "FVA"
+Title: "Idempotent Eigenvectors"
+Date: "2023-10-01"
+engine: julia
+julia:
+  exeflags: ["--project=.."]
+theme:
+    light: flatly
+    dark: darkly
+---
+
+# Environment Construction
+
+```{julia}
+using DrWatson
+DrWatson.quickactivate(@__DIR__)
+#@quickactivate(@__DIR__)
+#using Pkg; Pkg.add("CSV")
+using DataFrames, CSV
+using Graphs
+#using Semifields
+using SparseArrays
+using MaxPlus
+using Printf
+```
+
+Now define attributes for the environment:
+```{julia}
+#set_tropical_display(0)#Q:FVA: where does this primitive come from?
+Base.show(io::IO, ::MIME"text/latex", x::MP) = show(io, MIME"text/plain", x)
+Base.show(io::IO, ::MIME"text/latex", A::MPAbstractVecOrMat) = show(io, MIME"text/plain", A)
+```
+
+## Data
+
+REad the functional connectome data for C. elegans interneurons from a CSV file and convert it to a matrix of Semifields.
+```{julia}
+# Leer el archivo CSV
+df = CSV.read(
+        datadir("exp_raw","functional_connectivity_interneurons.csv"), 
+        DataFrame)
+#TODO: FVA. Explore the dataset. rows? Cols?
+
+# Nombres de neuronas
+neuron_labels = Vector{String}(df[:, 1]);  # Asume que la primera columna del DataFrame contiene los nombres
+
+# Reemplazar valores missing con -Inf
+df_filled = coalesce.(df, -Inf);
+
+# Convertir el DataFrame en una matriz numérica y la transpone con '
+mat = Matrix(df_filled[:, 2:end])'  # la primera columna son las etiquetas
+
+# Asegurar que está en el tipo correcto
+mat = convert(Array{Float64}, mat)
+
+# Reconstruimos el df transpuesto
+# Crear el DataFrame con los datos transpuestos
+df_transposed = DataFrame(mat, copy(neuron_labels))  # Usa neuron_labels como nombres de columna
+
+# Añadir la columna con los nombres de fila
+df_transposed = insertcols(df_transposed, 1, :Neuron => neuron_labels)
+
+#Cambiar los 0s por -Inf
+#mat_mp_ready = map(x -> x == 0.0 ? -Inf : x, mat)
+B = MP.(mat);
+# Imprime la matriz MP completa sin truncar
+show(stdout, "text/plain", B)
+```
+
+Now do a test check:
+
+```{julia}
+neuronas = ["AIBL", "RIAR", "RIAL"]
+row_idxs = findall(n -> n in neuronas, neuron_labels)
+test = df[row_idxs, neuronas]
+show(stdout, "text/plain", test)
+show(stdout, "text/plain",B[row_idxs,row_idxs])#FVA: not in UFNF0
+```
+# Test Case 1: Working out the right eigenvalues
+
+Find the strongly connected components by their matrices.
+```{julia}
+"""
+    extract_all_strong_components → submatrices, components, node_to_component, condensation
+
+- condensation: condensation digraph
+
+A primitive to extract all strong components from a matrix in UFNF2 format
+with no zero lines. 
+
+This returns the condensation digraph of the matrix, 
+
+TODO: Change to entries in a semifield or CSemifield. 
+"""
+function extract_all_strong_components(B_mp::Matrix{MP})
+    # FVA: this is the digraph associated to the matrix.
+    n = size(B_mp, 1) 
+    @assert n == size(B_mp, 2)#FVA: only valid for square matrices, in principle!
+    #G = Graphs.DiGraph(n)    
+    #You have to start using comprehensions instead of for loops
+    #[add_edge!(G,i,j) for i = 1:n, j=1:n if B_mp[i, j] != MP(-Inf)]#This needs to be changed to the bottom of the semifield.
+    #FVA: you can cleanly create the digraph from an interator on the edges
+    G2 = Graphs.DiGraph(Edge.([(i,j) for i = 1:n, j=1:n if B_mp[i, j] != MP(-Inf)]))#Comprehension to create the edges of the graph.
+    G = Graphs.DiGraph(B_mp .!= MP(-Inf))#FVA: Even easier, you can use the matrix directly to create the graph.
+    #FVA: why a {59, 193} directed simple Int64 graph, and not a Bool graph. A: because that would be a non-generalisable encoding of link weights! Anyway, it should be either ones or tops, but the latter are difficult to operate with 
+    @assert G == G2 #FVA: this is a test to see if the graph is well built.
+    #for i in 1:n
+    #    for j in 1:n
+    #        if B_mp[i, j] != MP(-Inf)
+    #            add_edge!(G, i, j)
+    #        end
+    #    end
+    #end
+
+    #This is building the direct and inverse dictionaries of nodes and components. 
+    # 1. this is the component => node dictionary.
+    components = Graphs.strongly_connected_components(G)
+
+    # FVA: some constructors are immediate!
+    #node_to_component = Dict(enumerate(components))
+    #@assert length(components) == length(node_to_component)
+    # Creamos el mapeo manualmente
+    #node_to_component = Dict{Int, Int}()
+    node_to_component = zeros(Int64,1,n) 
+    #FVA: since every node belongs to just one component, it is better to use a vector
+    #node_to_component = zeros(Int, n)#make space
+    # Las submatrices de componentes
+    submatrices = Matrix{MP}[]
+    #=
+    component_nodes = Vector{Int}[]
+    for nodes in node_groups
+        push!(submatrices, B_mp[nodes, nodes])
+        push!(component_nodes, nodes)
+    end
+    =#
+    for (comp_id, comp_nodes) in enumerate(components)
+        push!(submatrices, B_mp[comp_nodes, comp_nodes])
+        for node in comp_nodes
+            node_to_component[node] = comp_id
+        end
+    end
+    @assert length.(components) == map(m -> size(m,1), (submatrices))
+    @assert all()
+
+    
+    # node_groups: lista de nodos por componente
+    # FVA: this is a list of lists, where each sublist contains the nodes in a component.
+    # FVA: but this seems to be just the list of nodes by component, which is exactly `components
+    #=
+    num_components = length(components)
+    node_groups = [Int[] for _ in 1:num_components]
+    for (node, comp_id) in sort(collect(node_to_component))
+        push!(node_groups[comp_id], node)
+    end
+    =#
+
+
+    # Condensed graph: it is better to give it the clue of the components
+    #cond = Graphs.condensation(G)
+    cond = Graphs.condensation(G, components)#If you have the components, you can build the condensed matrix directly.
+
+    #return submatrices, component_nodes, cond, node_groups
+    return submatrices, components, node_to_component, cond
+end
+```
+
+Use this primitive to extract all strong components from the matrix `B_mp`:
+
+```{julia}
+submatrices, components, node_to_component, cond = extract_all_strong_components(B_mp)
+# Print the number of components
+println("Number of components: ", length(components))
+# Print the nodes in each component
+for (i, nodes) in enumerate(components)
+    println("Component $i: ", join(nodes, ", "))
+end
+# Print the condensed graph
+println("Condensed graph: ", cond)
+# Print the submatrices
+for (i, submat) in enumerate(submatrices)
+    println("Submatrix for component $i:\n", submat)
+end
+# Print the node groups
+for (i, nodes) in enumerate(node_to_component)
+    println("Node group $i: ", join(nodes, ", "))
+end
+```
+
+A better principled visualisation after Emma:
+```{julia}
+for (i, (B_sub, nodes)) in enumerate(zip(submatrices, components))
+    println("==== Componente $i ====")
+    println("Nodos:")
+    println(nodes)
+    println("\nSubmatriz:")
+    # Imprime la matriz MP completa sin truncar
+    show(stdout, "text/plain", B_sub)
+    println("\n\n---------------------------\n")
+end
+```
+
+## Calculo de autovalores
+
+Work out the eigenvalues
+
+```{julia}
+#FVA: dimension this better
+eigenvalues = MP.(zeros(Float64,n,1))
+for (i, B_sub) in enumerate(submatrices)
+    r = howard(sparse(B_sub)) 
+    lambda = r.eigenvalues  
+    println("Autovalor max-plus de componente $i: ", MP(lambda[1]))
+    #push!(eigenvalues, MP(lambda[1]))
+    eigenvalues[i] = MP(lambda[1])
+end
+```
+
+Find out the eigenvectors for irreducible matrices:
+
+```{julia}
+"""
+all_eigenvectors(Au::Matrix{MP}, λ ::MP;  tol=1e-10) → evPositions, Anstar
+
+A primitive to work out the left (rows) and right (column) eigenvalues of an irreducible matrix
+by looking at the elements of the diagonal of the TSR closure of the normalized matrix.
+- A: square MP matrix. 
+- λ: its eigenvector. 
+
+We return the nodes rather than the actual vectors. 
+- evPositions: positions of the eigenvectors in 1:n with n = size(A,1)
+- Anstar: star of normalized input matrix A
+
+TODO: this algorithm is formally identical for MinPlus analysis, eg. polymorphic. 
+"""
+function allEigenvectors(Aᵢ::Matrix{MP}, λᵢ::MP; tol=1e-10)
+    n = size(Aᵢ, 1)
+    I_n = [i == j ? MP(0.0) : MP(-Inf) for i in 1:n, j in 1:n]#FVA: uses too much space?
+    n == 1 && return n, I_n#Early termination. Probably wrong if Bi = [-Inf]
+
+    # Paso 1: Normalizar B_i dividiendo por autovalor (max-plus: restar)
+    A = Aᵢ ./ λᵢ#Normalized matrix right MP division (unless this is the top aka Inf in Maxplus)
+
+    # Paso 2: Calcular A^+ = A + A^2 + ... until convergence
+    # FVA: actually by idempotency of addition this only needs to be done at most until Bp^n
+    # FVA: this is the naive, iterative algorithm. 
+    # FVA: it can be improved by doing a doubling algorithm, see in old Matlab code. 
+    Ai = deepcopy(A)#Will store the latest A^i. Here i=1
+    Aplus = MP[-Inf] .+ Ai #MP[-Inf for _ in 1:n, _ in 1:n]#Zero max-plus matrix. Will accumulate
+    for i in 2:n#FVA: at least goes over this once, since n==1 is taken care of.
+        Ai = Ai * A#FVA: maxplus addition The copy is done in the first update
+        Aplus = Aplus + Ai#FVA: maxplus addition
+    end
+    # Step 3: Work out A^* = I_n + A^+
+    #FVA: for A^* we just add the identity to A^+
+    Astar = Aplus + I_n
+
+    #ERF
+    #=
+    A_star = deepcopy(A)
+    A_prev = MP[-Inf for _ in 1:n, _ in 1:n]
+    A_star .= max.(A_star, I_mp)  # A_star = max(A_star, I)
+    max_iter = 100
+    iter = 0
+    while !isequal(A_star, A_prev) && iter < max_iter
+        iter += 1
+        A_prev = deepcopy(A_star)
+        A_star = max.(A_star, A_prev * Bp)
+    end
+    =#
+
+    # Paso 3: Detectar posiciones con valor cercano a 0 en la diagonal
+    evPositions = findall(i -> abs(Astar[i, i]) < tol, 1:n)
+
+    # Paso 4: Autovectores por la izquierda: filas en posiciones relevantes
+    #left_eigenvectors = [Astar[:, i] for i in evPositions]
+
+    # Paso 5: Autovectores por la derecha: columnas en posiciones relevantes
+    #right_eigenvectors = [Astar[i, :] for i in evPositions]
+
+    #FVA: it were better to return the index over the A_star
+    #return left_eigenvectors, right_eigenvectors, Astar
+    return evPositions,Astar
+end
+```
+
+Check with the matrices from classes 8(2 nodes) and 9(24 columns):
+
+```{julia}
+begin
+    i = 1
+    evPositions, Astar = allEigenvectors(submatrices[i], eigenvalues[i])
+    i = 8
+    evPositions, Astar = allEigenvectors(submatrices[i], eigenvalues[i])
+    i = 9
+    evPositions, Astar = allEigenvectors(submatrices[i], eigenvalues[i])
+end
+```
+
+## Upper Frobenius Normal Form (UFNF)
+
+```{julia}
+"""
+    getUFNF(B::Matrix{MP}, node_groups::Vector{Vector{Int}}, cond::DiGraph) → 
+
+A primitive to obtain the permutation that transforms a given possibly reducible matrix into 
+upper Frobenius Normal Form (UFNF). This normal forms favours that starting classes in the 
+condensed digraph appear to the upper left and final classes to the lower right. This would indeed be the case for a single Strongly Connected Component (SCC).
+
+The algorithm proceeds in the hierarchy of normal forms, except it supposes there are no 
+empty rows or columns (so UFNF3 is not needed.)
+
+Check wrt "The Spectra of Reducible Matrices over Completed Commutative Idempotent Semiﬁelds and their Spectral Lattices", by Valverde-Albacete and Peláez Moreno
+
+"""
+function getUFNF(B::Matrix{MP}, 
+    node_groups::Vector{Vector{Int}}, 
+    cond::DiGraph, 
+    neuron_labels::Vector{String})
+
+    # UFNF2: diagonal matrix of SCCs of symmetrical graph. 
+    num_sccs = length(node_groups)
+    group_indices = collect(1:num_sccs)
+
+    # Paso 1: obtener CGCs como componentes débilmente conectadas del DAG cond
+    undirected_cond = Graph(cond)  # convierte el DAG en grafo no dirigido
+    cgc_components = connected_components(undirected_cond)  # cada CGC es un conjunto de SCCs
+
+    # Paso 2: ordenar CGCs por número de SCCs (de menor a mayor)
+    sorted_cgcs = sort(cgc_components, by = cgc -> length(cgc))
+
+    # Paso 3: obtener orden topológico global de las SCCs
+    global_topo = topological_sort(cond)
+    topo_pos = Dict(scc => findfirst(isequal(scc), global_topo) for scc in group_indices)
+
+    # Paso 4: ordenar SCCs dentro de cada CGC por orden topológico
+    ordered_sccs = Vector{Int}()
+    for cgc in sorted_cgcs
+        ordered = sort(cgc, by = scc -> topo_pos[scc])
+        append!(ordered_sccs, ordered)
+    end
+
+    # Paso 5: expandimos a nodos reales
+    ordered_nodes = reduce(vcat, node_groups[ordered_sccs])
+    ordered_labels = neuron_labels[ordered_nodes]
+    B_frobenius = B[ordered_nodes, ordered_nodes]
+
+    return B_frobenius, ordered_nodes, ordered_labels
+end
+```
+
+# FVA's approach
+
+## Data 
+### Example data 1
+
+A simple two-scc example to obtain the eigenvectors supplied by ERFs: 
+
+```{julia}
+# === 1. Generar matriz maxplus reducible sencilla ===
+# Ejemplo 5x5 reducible (2 componentes fuertemente conexas: {1,2,3} y {4,5})
+#=
+M = [
+    0.0  1.0  -Inf -Inf -Inf;
+   -Inf 0.0  2.0  -Inf -Inf;
+    1.0 -Inf 0.0  -Inf -Inf;
+   -Inf -Inf -Inf 0.0  1.0;
+   -Inf -Inf -Inf -Inf 0.0
+]
+=#
+M1 = [
+    0.0  1.0  -Inf -Inf -Inf;
+   -Inf 0.0  2.0  -Inf -Inf;
+    1.0 -Inf 0.0  -Inf -Inf;
+   -Inf -Inf -Inf 0.0 1.0;
+   -Inf -Inf -Inf -Inf 0.0
+]
+A1 = MP.(M1)
+```
+This has connected components:
+  * [[1,2,3]]: 
+    *  single irreducible component by cycle: 1 -> 2 -> 3 -> 1 lambda = 4/3
+  * [[4], [5]]: t
+    * two irreducible scc: 5 -> 5: lambda = 0, 4 -> 4: lambda = 0.0
+    * Condensation digraph [4] -> [5] So, 5 is shadowed, but has the same lambda as the original. 
+
+This has two distinct and orthogonal eigenspaces in coords [1,2,3] and [4,5]
+  * the first one is a total order of ingfinite length generated by any of v_1, v_2, or v_3 which are also linearly ordered. 
+  * the second one is also a total order of length 2: ev_4 < ev_5 
+So the whole space is a product of two orders.
+
+We obfuscate the structure to validate :
+```{julia}
+using Permutations#Check for interface at: https://juliapackages.com/p/permutations
+p1 = RandomPermutation(size(M1,1))#keep everything contained there
+A1obfuscated = MP.(M1[p1.data, p1.data])
+```
+
+### Example data 2 from Akian, Bapat, Gaubert, 2015. Chapter 25: Max-plus Algebra
+
+This is a reducible matrix with a single connected component and shadowed classes:
+
+```{julia}
+M2 = Matrix{Float64}(undef,8,8)#zeros(8,8)*(-Inf)
+M2[1:8,1:8] .= -Inf
+#The matrix is already in UFNF3
+M2[1,1:8] = [0 -Inf 0 -Inf 7 -Inf -Inf -Inf]
+M2[2:4, 2:4] = [-Inf 3 0; 1 -Inf -Inf; 2 -Inf -Inf]
+M2[4,8] = 10
+M2[5:7, 5:7] = [1 0 -Inf; -Inf -Inf 0; -1 2 -Inf]
+M2[7,8] = 23
+M2[8,8] = 0
+MP.(M2)
+A2 = MP.(M2)
+```
+Permute rows and columns to obfuscate the UFNF2
+
+```{julia}
+using Permutations#Check for interface at: https://juliapackages.com/p/permutations
+p2 = RandomPermutation(size(M2,1))#keep everything contained there
+A2obfuscated = MP.(M2[p2.data, p2.data])
+```
+
+## Computations
+
+The digraphs associated to each of the components have special properties which we explore next.
+
+### Basic operation: closures
+
+Using the fact (from fact 2 of Gaubert and Akian, 2015), that: A^* = I ++ A^1 ++ · · · ++ A^n−1.
+And due to the idempotency of addition we have (I ++ A)^(n-1) = I ++ A^1 ++ · · · ++ A^n−1.
+
+```{julia}
+"""
+
+A function to work out the MP power of a matrix.
+"""
+function mmp_mpower(A::Matrix{MP}, k::Int)
+    k < 0 && error("Can only do positive powers by this method.")
+    m,n = size(A)
+    m != n && error("Can only find mth power on a square matrix.")
+    I_n = [i == j ? MP(0.0) : MP(-Inf) for i in 1:n, j in 1:n]#FVA: uses too much space?
+    n == 0 && return I_n 
+    n == 1 && return A
+    #Here n > 1
+    Y = I_n
+    while n > 0
+        Y = isodd(n) ? Y * A : A * A
+        n >>= 1
+    end
+    return Y
+end
+```
+
+```{julia}
+"""
+
+Transitive reflexive closure of a matrix over and idempotent semifield by the power doubling method.
+
+"""
+function trclosure(A::Matrix{MP})
+    m,n = size(A)
+    m != n && error("Can only find trclosure on a square matrix.")
+    n == 1 && return MP(A[n,n] > 0 ? Inf : 0.0)#Might correctly diverge to the top!
+    return mmp_mpower(A,n-1)
+end
+
+#= Naive implementation
+function trclosure(A::Matrix{MP})
+    n = size(Aᵢ, 1)
+    I_n = [i == j ? MP(0.0) : MP(-Inf) for i in 1:n, j in 1:n]#FVA: uses too much space?
+    # FVA: actually by idempotency of addition this only needs to be done at most until Bp^n
+    # FVA: this is the naive, iterative algorithm. 
+    Ai = deepcopy(A)#Will store the latest A^i. Here i=1
+    Aplus = MP[-Inf] .+ Ai #MP[-Inf for _ in 1:n, _ in 1:n]#Zero max-plus matrix. Will accumulate
+    for i in 2:n#FVA: at least goes over this once, since n==1 is taken care of.
+        Ai = Ai * A#FVA: maxplus addition The copy is done in the first update
+        Aplus = Aplus + Ai#FVA: maxplus addition
+    end
+    # Step 3: Work out A^* = I_n + A^+
+    #FVA: for A^* we just add the identity to A^+
+
+    return Aplus + I_n
+end
+=#
+```
+
+Example on the test data:
+```{julia}
+A = MP.(M)
+trclosure(A)#Does not converge for lambda bigger than 0.0
+mmp_mpower(A,100)
+```
+
+### The base case: irreducible matrices
+
+A primitive to deal with the base case. 
+
+```{julia}
+"""
+    getUFNF0(Aᵢ::Matrix{MP}; tol=1e-10) -> λᵢ, evNodes, Aᵢstar
+
+Returns:
+- λᵢ: the single eigenvalue for this matrix
+- evNodes: the nodes where left and right eigenvectors are realised
+- Aᵢstar: the TSR closure of the matrix, whose rows and columns indexed by [evNodes]
+are left and right (resp.) eigenvectors. 
+
+Precondition: the matrix is irreducible.
+"""
+function getUFNN₀(Aᵢ::Matrix{MP}; tol=1e-10)
+    n = size(Aᵢ, 1)
+    #I_n = [i == j ? MP(0.0) : MP(-Inf) for i in 1:n, j in 1:n]#FVA: uses too much space?
+    n == 1 && return Aᵢ[1,1], [n], MP.(zeros(1,1))#Early termination. Probably wrong if Bi = [Inf]
+
+    # Otherwise, 
+    # 0.find the eigenvalue: 
+    # a) using Howard's algorithm
+    r = howard(sparse(Aᵢ))
+    λᵢ = r.eigenvalues[1]#There is always at least one eigenvalue.
+    # b) using the maximal cycle mean (pending)
+
+    # 1: Normalize Aᵢ dividiendo por autovalor (max-plus: restar)
+    A = Aᵢ ./ λᵢ#Normalized matrix right MP division (unless this is the top aka Inf in Maxplus)
+
+    #= 
+    # Paso 2: Calcular A^+ = A + A^2 + ... until convergence
+    # FVA: actually by idempotency of addition this only needs to be done at most until Bp^n
+    # FVA: this is the naive, iterative algorithm. 
+    Ai = deepcopy(A)#Will store the latest A^i. Here i=1
+    Aplus = MP[-Inf] .+ Ai #MP[-Inf for _ in 1:n, _ in 1:n]#Zero max-plus matrix. Will accumulate
+    for i in 2:n#FVA: at least goes over this once, since n==1 is taken care of.
+        Ai = Ai * A#FVA: maxplus addition The copy is done in the first update
+        Aplus = Aplus + Ai#FVA: maxplus addition
+    end
+    # Step 3: Work out A^* = I_n + A^+
+    #FVA: for A^* we just add the identity to A^+
+    Aᵢstar = Aplus + I_n
+    =#
+    Aᵢstar = trclosure(A)
+    # FVA: it can be improved by doing a doubling algorithm, see in old Matlab code. 
+    # (I + A)*(I + A) = I + A + A^2 by idempotency.
+
+    evNodes = findall(i -> abs(Aᵢstar[i, i]) < tol, 1:n)
+    #evNodes = findall(i -> Aᵢstar[i,i] ≈ 0.0, 1:n)#FVA: type incorrect
+
+    return λᵢ, evNodes, Aᵢstar
+end 
+```
+
+An example on a part of the demo matrix which is irreducible:
+
+```{julia}
+cc = [1,2,3]
+Aᵢ = A[cc,cc]
+λᵢ, evNodes, Aᵢstar  = getUFNN₀(Aᵢ)
+#Check left and right eigenvector properties.
+# Check the left eigenvector property: we have to use approx due to calculations errors
+@assert plustimes(Aᵢstar[evNodes,:] * Aᵢ) ≈ plustimes(Aᵢstar[evNodes,:] .* λᵢ)
+# Check the right eigenvector property: we have to use approx due to calculations errors
+@assert plustimes(Aᵢ * Aᵢstar[:,evNodes]) ≈ plustimes(Aᵢstar[:,evNodes] .* λᵢ)
+# Check for a dimension 1 matrix.
+B = MP.(ones(1,1)*2)
+@assert getUFNN₀(B) == (2.0, [1], MP[0;;])
+```
+
+### Properly upper triangular matrices
+
+These accept an UFNF1 form:
+
+```{julia}
+"""
+    getUFNF₁(A_s::Matrix{MP}) → 
+
+Find the UFNF1 of a matrix that is reducible. 
+"""
+function getUFNF₁(A_s::Matrix{MP})
+    #precondition: no empty rows or columns, e.g. already done UFNF2 analysis
+    dg = Graphs.DiGraph(A_s .!= MP(-Inf))#Consider it a digraph
+    sccs = strongly_connected_components(dg)#Find the strongly connected components of dg
+    #terminal case: only one scc: this must be irreducible, so we can find everything
+    nsccs = length(sccs)#number of scc of cc of index s
+    lambdas = Array{Array{MP}}(undef, nsccs)#Make room for eigenvalues
+    Astars = Array{Matrix{MP}}(undef, nsccs)#Make room for stars
+    evnodes = Array{Array{Int}}(undef, nsccs)#Make room for eivenvector indices. 
+    conds = Array{Any}(undef,nsccs)#Condensation digraphs of connected components
+    if nsccs == 1#it is already in UFNF0
+        # The whole A_s matrix has 1 eigenvalue
+        lambdas[1], evNodes[1], Astars[1]  = getUFNN₀(A_s)
+        #CAVEAT, conds[1] is undefined
+    else#we may need to reorder the condensation digraph topologically. 
+        cond_s = Graphs.condensation(dg, sccs)#Their condensation digraph
+        localevs = Array{MP}(undef,)
+        for sccs_i in sccs#Index the scc's of s cc by index i 
+        end
+    end
+    return lambdas, evnodes, Astar, cond
+end
+```
+
+Two examples one a degenerate case and another a proper triangular.
+
+```{julia}
+
+```
+
+### Properly block diagonal matrices
+
+```{julia}
+function getUFNF₂(A::Matrix{MP})
+    # Find the connected components
+    Asym = A + transpose(A)#symmetrization of matrix.
+    g = Graphs.Graph(Asym .!= MP(-Inf))
+    ccs = connected_components(g)#List of connected components: can appear in any order, 
+
+    #but it is nice to order them in increasing number of nodes per component, to make the UFNF "stable by the base"
+    sort!(ccs; by=length)#here we used the in-sort type of sorting, since the inportant info are the node identities.
+
+    # UFNF2 diagonal of UFNF1
+    nccs = length(ccs)#number of connected components
+    #All the following vectors are coindexed with ccs
+    lambdas = Array{Array{MP}}(undef, nccs)#Make room for eigenvalues
+    Astars = Array{Matrix{MP}}(undef, nccs)#Make room for stars
+    evnodes = Array{Array{Int}}(undef, nccs)#Make room for eivenvector indices. 
+    conds = Array{Any}(undef,nccs)#Condensation digraphs of connected components
+    for s in 1:nccs#go over each connected component
+        #caveat: the node numbers below are relative to those in cc (1st level of indirection)
+        println("Finding UFNF for cc:", ccs[s])
+        lnodes = ccs[s]
+        lambdas[s], evnodes_s, Astars_s, conds_s = getUFNF₁(A[lnodes,lnodes])#FVA: Traslate nodes!
+        #@assert evs are ok here.
+    end
+    return ccs, conds, lambdas, evnodes, Astars
+end
+```
+
+```{julia}
+A = MP.(M)#FVA: entry point for parameter of the algorithm
+ccs,tconds,tlambdas,tevnodes,tAstars = getUFNF₂(A)
+neworder = reduce(vcat,ccs)#Reordering of the nodes for an UFNF2
+A[neworder,neworder]
+```
+
+
